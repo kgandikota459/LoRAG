@@ -4,7 +4,7 @@ CS7643 Final Project
 ## Author(s)
 
 - Daniel Nicolas Gisolfi <dgisolfi3@gatech.edu>
-- Kashaul <LASTNAME> <kashaul.LASTNAME@gatech.edu>
+- Kashaul ADD_LASTNAME <EMAIL@gatech.edu>
 
 ## Usage
 
@@ -45,10 +45,10 @@ python3 ./src/train.py
 - Allow switching between baseline (no LoRA) and LoRA-enabled versions.
 
 ### Train
-    - We can start with the chosen model as a baseline for the performance on the task
-    - Next we can use the best parameters found for the base model and then train with the PEFT model using LoRA.
-    - If we can find LoRA configuration that improves the base model on the task we can keep that config for LoRA
-    - Repeat for the quantization task?
+- We can start with the chosen model as a baseline for the performance on the task
+- Next we can use the best parameters found for the base model and then train with the PEFT model using LoRA.
+- If we can find LoRA configuration that improves the base model on the task we can keep that config for LoRA
+- Repeat for the quantization task?
 
 ### Evaluation
 - Run on a Test set and track performance 
