@@ -1,6 +1,6 @@
-scikit-learn
 bert_score
 peft
 transformers
 PyYAML
 datasets
+sacrebleu

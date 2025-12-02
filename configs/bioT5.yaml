@@ -1,0 +1,16 @@
+model:
+  pretrained_model: QizhiPei/biot5-base
+  out_dir: biot5
+  max_len: 384
+  batch_size: 4
+  lr: 7e-5
+  n_epochs: 8
+lora:
+  r: 16
+  enabled: False # Gather Baseline for T5 first
+data:
+  subset: 100 # None for all data
+  dataset: derm_qa
+  # dataset: medXpert
+  # dataset: no_robots
+

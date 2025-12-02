@@ -1,9 +1,0 @@
-model:
-  pretrained_model: bert-base-uncased # We can swap to BioBERT or ClinicalBert later
-  out_dir: bert_lora_out
-  max_len: 128
-  batch_size: 8
-  n_epochs: 1 # This is super low for testing
-lora:
-  r: 8
-  enabled: True
