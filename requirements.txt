@@ -4,3 +4,7 @@ transformers
 PyYAML
 datasets
 sacrebleu
+evaluate
+rouge_score
+nltk
+torch

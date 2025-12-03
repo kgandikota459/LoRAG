@@ -37,13 +37,13 @@ def tokenize_dataset(dataset, tokenizer, max_len, cache_file=None, force_regen=F
             [build_instruction(q) for q in batch["prompt"]],
             max_length=max_len,
             truncation=True,
-            padding="max_length"
+            padding="longest"
         )
         labels = tokenizer(
             batch["response"],
             max_length=max_len,
             truncation=True,
-            padding="max_length"
+            padding="longest"
         )
 
         # replace negative 100 with padding token for tokenizer
@@ -69,12 +69,20 @@ def configure_lora(model, lora_cfg):
         return model
 
     config = LoraConfig(
+        task_type="SEQ_2_SEQ_LM",
         r=lora_cfg.get("r", 16),
         lora_alpha=lora_cfg.get("alpha", 32),
-        target_modules=["q", "k", "v", "o"],
-        lora_dropout=0.1,
-        task_type="SEQ_2_SEQ_LM",
-        bias="none"
+        lora_dropout=lora_cfg.get("dropout", 0.1),
+        target_modules=[
+            #  Query, key, value, output
+            "q", "k", "v", "o",
+            #  The weight matrices for the first two 
+            # linear layers in T5's FFN block
+            "wi_0", "wi_1", 
+            # Weight matrix for output linear layer of 
+            # attention mechanism and FFN
+            "wo"
+        ]
     )
     model = get_peft_model(model, config)
     model.print_trainable_parameters()
@@ -82,7 +90,7 @@ def configure_lora(model, lora_cfg):
 
 
 def compute_metrics(pred, tokenizer):
-
+    metrics = {}
     preds = pred.predictions
     labels = pred.label_ids
 
@@ -95,29 +103,52 @@ def compute_metrics(pred, tokenizer):
     decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
     decoded_labels = tokenizer.batch_decode(labels_clean, skip_special_tokens=True)
 
-    # use bert encoder to compare the true vs predicted sematic similarity
-    P, R, F1 = bert_score_fn(decoded_preds, decoded_labels, lang="en", rescale_with_baseline=True)
+    try:
+        # use bert encoder to compare the true vs predicted sematic similarity
+        P, R, F1 = bert_score_fn(decoded_preds, decoded_labels, lang="en", rescale_with_baseline=True)
+        metrics["bertscore_f1"] = F1.mean().item()
+    except Exception as e:
+        print(f"[metric-error] BERTScore failed: {e}")
+        metrics["bertscore_f1"] = None
 
     # evaluate package metrics
     # https://huggingface.co/metrics
-    rouge = evaluate.load("rouge").compute(predictions=decoded_preds, references=decoded_labels)
-    bleu = evaluate.load("bleu").compute(predictions=decoded_preds, references=decoded_labels)
-    meteor = evaluate.load("meteor").compute(predictions=decoded_preds, references=decoded_labels)
-    chrf = evaluate.load("chrf").compute(predictions=decoded_preds, references=decoded_labels)
+    try:
+        rouge = evaluate.load("rouge").compute(predictions=decoded_preds, references=decoded_labels)
+        metrics["rouge1"] = rouge.get("rouge1")
+        metrics["rouge2"] = rouge.get("rouge2")
+        metrics["rougeL"] = rouge.get("rougeL")
+    except Exception as e:
+        print(f"[metric-error] ROUGE failed: {e}")
+        metrics["rouge1"] = metrics["rouge2"] = metrics["rougeL"] = None
+    try:
+        bleu = evaluate.load("bleu").compute(predictions=decoded_preds, references=decoded_labels)
+        metrics["bleu"] = bleu.get("bleu")
+    except Exception as e:
+        print(f"[metric-error] BLEU failed: {e}")
+        metrics["bleu"] = None
+    try:
+        meteor = evaluate.load("meteor").compute(predictions=decoded_preds, references=decoded_labels)
+        metrics["meteor"] = meteor.get("meteor")
+    except Exception as e:
+        print(f"[metric-error] METEOR failed: {e}")
+        metrics["meteor"] = None
+    try:    
+        chrf = evaluate.load("chrf").compute(predictions=decoded_preds, references=decoded_labels)
+        metrics["chrf"] = chrf.get("score")
+    except Exception as e:
+        print(f"[metric-error] CHRF failed: {e}")
+        metrics["chrf"] = None
 
+    try:
     # Check for an exact match...not likley with generative responses of multie sentence ground truth
-    em = sum(p.strip() == l.strip() for p, l in zip(decoded_preds, decoded_labels)) / len(decoded_preds)
+        em = sum(p.strip() == l.strip() for p, l in zip(decoded_preds, decoded_labels)) / len(decoded_preds)
+        metrics["exact_match"] = em
+    except Exception as e:
+        print(f"[metric-error] exact match failed: {e}")
+        metrics["exact_match"] = None
+    return metrics
 
-    return {
-        "bertscore_f1": F1.mean().item(),
-        "rouge1": rouge["rouge1"],
-        "rouge2": rouge["rouge2"],
-        "rougeL": rouge["rougeL"],
-        "bleu": bleu["bleu"],
-        "meteor": meteor["meteor"],
-        "chrf": chrf["score"],
-        "exact_match": em,
-    }
 
 def train_model(model, tokenizer, train_dataset, cfg, cache_path=None, force_regen=False):
     model_out = os.path.join("./out", cfg["model"]["out_dir"])
@@ -136,7 +167,7 @@ def train_model(model, tokenizer, train_dataset, cfg, cache_path=None, force_reg
         num_train_epochs=cfg["model"]["n_epochs"],
         predict_with_generate=True,
         logging_strategy="epoch",
-        fp16=True,
+        fp16=True, # Set to False on MPS (Apple silicon)
         save_total_limit=2
     )
 
@@ -167,7 +198,7 @@ def evaluate_model(model, tokenizer, eval_dataset, cfg, cache_path=None, force_r
         per_device_eval_batch_size=cfg["model"]["batch_size"],
         predict_with_generate=True,
         logging_strategy="epoch",
-        fp16=True
+        fp16=True, # Set to False on MPS (Apple silicon)
     )
 
     trainer = Seq2SeqTrainer(
@@ -192,7 +223,7 @@ def get_model(model_cfg):
 def run_experiment(cfg, subset=None, force_regen=False):
 
     if cfg["data"]["dataset"] not in supported_datasets:
-        raise ValueError(f"Dataset not supported: {cfg["data"]['dataset']}")
+        raise ValueError(f"Dataset not supported: {cfg['data']['dataset']}")
 
     ds = supported_datasets[cfg["data"]["dataset"]](subset=subset)
 
@@ -205,8 +236,8 @@ def run_experiment(cfg, subset=None, force_regen=False):
 
     model = configure_lora(model, cfg.get("lora", {}))
 
-    train_cache = os.path.join("./data", f"{cfg["data"]['dataset']}_train_tokenized.pkl")
-    eval_cache = os.path.join("./data", f"{cfg["data"]['dataset']}_eval_tokenized.pkl")
+    train_cache = os.path.join("./data", f"{cfg['data']['dataset']}_train_tokenized.pkl")
+    eval_cache = os.path.join("./data", f"{cfg['data']['dataset']}_eval_tokenized.pkl")
 
     model = train_model(model, tokenizer, train_dataset, cfg, cache_path=train_cache, force_regen=force_regen)
     evaluate_model(model, tokenizer, test_dataset, cfg, cache_path=eval_cache, force_regen=force_regen)
