@@ -32,7 +32,7 @@ def generate_ground_truth(ds: Dataset):
     -------
     Tuple[dict, dict]
         the response to IDS and IDS to responses
-    """
+    """ 
     unique_responses = sorted(set(ds["response"]))
     response_id_map = {a: i for i, a in enumerate(unique_responses)}
     id_response_map = {i: a for a, i in response_id_map.items()}
@@ -101,9 +101,7 @@ def load_medXpert_dataset(cache_dir="./data", subset:int = None):
     processed = raw.map(extract, remove_columns=raw.column_names)
 
     split = processed.train_test_split(test_size=0.1, seed=42)
-    return split 
-
-
+    return split
 
 def load_no_robots(cache_dir="./data", subset:int = None):
     """Load/Convert no robots to Q/A data
@@ -139,6 +137,27 @@ def load_no_robots(cache_dir="./data", subset:int = None):
     split = processed.train_test_split(test_size=0.1, seed=42)
     return split
 
+
+def load_covid_qa_dataset(cache_dir="./data", subset: int = None):
+    """Loads the Covid-QA dataset for Extractive QA."""
+    local_path = os.path.join(cache_dir, "covid_qa")
+
+    if os.path.exists(local_path):
+        print(f"Loading dataset from cache: {local_path}")
+        ds = Dataset.load_from_disk(local_path)
+    else:
+        print("Downloading dataset from HuggingFace")
+        ds = load_dataset("deepset/covid_qa_deepset", split="train")
+        os.makedirs(cache_dir, exist_ok=True)
+        ds.save_to_disk(local_path)
+
+    if subset:
+        ds = ds.select(range(min(subset, len(ds))))
+    
+    # Covid QA is a single split, so we create a train/test split
+    split = ds.train_test_split(test_size=0.2, seed=42)
+    return split
+
 def build_instruction(question):
     return f"### Question:\n{question}\n\n### Answer:\n"
 
@@ -153,39 +172,88 @@ def preview_samples(model, tokenizer, raw_eval_dataset, num_samples=3, max_new_t
     model.eval()
 
     samples = raw_eval_dataset.select(range(min(num_samples, len(raw_eval_dataset))))
+    columns = raw_eval_dataset.column_names
 
-    for i in range(len(samples["prompt"])):
-        question = samples["prompt"][i]
-        truth = samples["response"][i]
+    is_extractive = "question" in columns and "context" in columns
+    is_generative = "prompt" in columns
 
-        prompt = build_instruction(question)
+    if not (is_extractive or is_generative):
+        print(f"Skipping preview: Dataset columns {columns} do not match expected formats.")
+        return
 
-        enc = tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            padding="max_length",
-            max_length=512
-        ).to(model.device)
+    for i in range(len(samples)):
+        if is_extractive:
+            question = samples["question"][i]
+            context = samples["context"][i]
+            answers = samples["answers"][i]
+            truth = answers["text"][0] if answers and answers["text"] else "No Answer"
 
-        with torch.no_grad():
-            outputs = model.generate(
-                **enc,
-                max_new_tokens=max_new_tokens,
-                do_sample=True,
-                top_p=0.9,
-                temperature=0.7,
-                repetition_penalty=1.1,
-                pad_token_id=tokenizer.eos_token_id,
-            )
+            inputs = tokenizer(
+                question,
+                context,
+                return_tensors="pt",
+                max_length=384,
+                truncation="only_second"
+            ).to(model.device)
 
-        decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            with torch.no_grad():
+                outputs = model(**inputs)
 
-        if "### Answer:" in decoded:
-            decoded = decoded.split("### Answer:", 1)[-1].strip()
+            answer_start_index = outputs.start_logits.argmax().item()
+            answer_end_index = outputs.end_logits.argmax().item()
 
-        print(f"----------- SAMPLE {i+1} -----------")
-        print(f"PROMPT:\n{question}\n")
-        print(f"GROUND TRUTH:\n{truth}\n")
-        print(f"PREDICTED:\n{decoded}\n")
-        print("-----------------------------------\n")
+            if answer_start_index == 0 and answer_end_index == 0:
+                decoded = "[NO_ANSWER_PREDICTED]"
+            elif answer_end_index < answer_start_index:
+                decoded = f"[INVALID_SPAN] (Start: {answer_start_index}, End: {answer_end_index})"
+            else:
+                predict_answer_tokens = inputs.input_ids[0, answer_start_index : answer_end_index + 1]
+                decoded = tokenizer.decode(predict_answer_tokens, skip_special_tokens=True)
+
+            print(f"----------- SAMPLE {i+1} -----------")
+            print(f"CONTEXT (Snippet):\n{context[:200]}...\n")
+            print(f"QUESTION:\n{question}\n")
+            print(f"GROUND TRUTH:\n{truth}\n")
+            print(f"PREDICTED:\n{decoded} (Indices: {answer_start_index}, {answer_end_index})\n")
+            print("-----------------------------------\n")
+
+        else: # Generative
+            question = samples["prompt"][i]
+            truth = samples["response"][i]
+
+            prompt = build_instruction(question)
+
+            enc = tokenizer(
+                prompt,
+                return_tensors="pt",
+                truncation=True,
+                padding="max_length",
+                max_length=512
+            ).to(model.device)
+
+            # Only generate if model supports it (Seq2Seq or CausalLM)
+            if model.config.is_encoder_decoder or model.config.is_decoder:
+                with torch.no_grad():
+                    outputs = model.generate(
+                        **enc,
+                        max_new_tokens=max_new_tokens,
+                        do_sample=True,
+                        top_p=0.9,
+                        temperature=0.7,
+                        repetition_penalty=1.1,
+                        pad_token_id=tokenizer.eos_token_id,
+                    )
+
+                decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+                if "### Answer:" in decoded:
+                    decoded = decoded.split("### Answer:", 1)[-1].strip()
+
+                print(f"----------- SAMPLE {i+1} -----------")
+                print(f"PROMPT:\n{question}\n")
+                print(f"GROUND TRUTH:\n{truth}\n")
+                print(f"PREDICTED:\n{decoded}\n")
+                print("-----------------------------------\n")
+            else:
+                 print("Skipping generation: Model is Encoder-Only (e.g., BERT) and does not support text generation.")
+                 return

@@ -1,15 +1,12 @@
 model:
-  pretrained_model: QizhiPei/biot5-base
-  out_dir: biot5
+  pretrained_model: dmis-lab/biobert-base-cased-v1.1
+  out_dir: biobert_qa
   max_len: 384
-  batch_size: 4
-  lr: 7e-5
-  n_epochs: 10
+  batch_size: 2
+  lr: 3e-5
+  n_epochs: 3
 lora:
-  enabled: False # Gather Baseline for T5 first
+  enabled: False
 data:
-  subset: 100 # None for all data
-  dataset: derm_qa
-  # dataset: medXpert
-  # dataset: no_robots
-
+  subset: 200 # Load a small subset first to verify
+  dataset: covid_qa

@@ -2,7 +2,7 @@
 
 Author(s)
 ---------
-Daniel Nicolas Gisolfi <dgisolfi3@gatech.edu>
+Daniel Nicolas Gisolfi <dgisolfi3@gatech.edu>, Kaushal Gandikota <kgandikota6@gatech.edu>
 """
 
 import os
@@ -13,10 +13,12 @@ from utils import *
 
 from transformers import (
     AutoTokenizer,
-    AutoModelForSeq2SeqLM,
-    Seq2SeqTrainer,
-    Seq2SeqTrainingArguments
+    AutoModelForQuestionAnswering,
+    TrainingArguments
 )
+from custom_trainer_qa import CustomQATrainer
+
+from extra.trainer_qa import *
 
 from peft import LoraConfig, get_peft_model
 from bert_score import score as bert_score_fn
@@ -24,7 +26,8 @@ from bert_score import score as bert_score_fn
 supported_datasets = {
     "derm_qa": load_derm_qa_dataset,
     "medXpert": load_medXpert_dataset,
-    "no_robots": load_no_robots
+    "no_robots": load_no_robots,
+    "covid_qa": load_covid_qa_dataset
 }
 
 
@@ -32,31 +35,81 @@ def tokenize_dataset(dataset, tokenizer, max_len, cache_file=None, force_regen=F
     if cache_file and os.path.exists(cache_file) and not force_regen:
         return pickle.load(open(cache_file, "rb"))
 
-    def tok(batch):
-        inputs = tokenizer(
-            [build_instruction(q) for q in batch["prompt"]],
+    def prepare_train_features(examples):
+        # Tokenize our examples with truncation and padding, but keep the overflows using a stride.
+        # This results in one example possible giving several features when a context is long, each of those features having a
+        # context that overlaps a bit the context of the previous feature.
+        tokenized_examples = tokenizer(
+            examples["question"],
+            examples["context"],
+            truncation="only_second",  # truncate context, not question
             max_length=max_len,
-            truncation=True,
-            padding="longest"
-        )
-        labels = tokenizer(
-            batch["response"],
-            max_length=max_len,
-            truncation=True,
-            padding="longest"
+            stride=128,
+            return_overflowing_tokens=True,
+            return_offsets_mapping=True,
+            padding="max_length",
         )
 
-        # replace negative 100 with padding token for tokenizer
-        labels["input_ids"] = [
-            [(tid if tid != tokenizer.pad_token_id else -100) for tid in seq]
-            for seq in labels["input_ids"]
-        ]
+        sample_mapping = tokenized_examples.pop("overflow_to_sample_mapping")
+        offset_mapping = tokenized_examples.pop("offset_mapping")
 
-        inputs["labels"] = labels["input_ids"]
-        return inputs
+        tokenized_examples["start_positions"] = []
+        tokenized_examples["end_positions"] = []
 
-    tokenized = dataset.map(tok, batched=True, remove_columns=dataset.column_names)
-    tokenized.set_format(type="torch")
+        for i, offsets in enumerate(offset_mapping):
+            # We will label impossible answers with the index of the CLS token.
+            input_ids = tokenized_examples["input_ids"][i]
+            cls_index = input_ids.index(tokenizer.cls_token_id) if tokenizer.cls_token_id in input_ids else 0
+
+            # Grab the sequence corresponding to that example (to know what is the context and what is the question).
+            sequence_ids = tokenized_examples.sequence_ids(i)
+
+            # One example can give several features if it is long, so we map the feature to the example index.
+            sample_index = sample_mapping[i]
+            answers = examples["answers"][sample_index]
+            
+            # If no answer is provided, set cls_index
+            if len(answers["answer_start"]) == 0:
+                tokenized_examples["start_positions"].append(cls_index)
+                tokenized_examples["end_positions"].append(cls_index)
+            else:
+                # Start/end character index of the answer in the text.
+                start_char = answers["answer_start"][0]
+                end_char = start_char + len(answers["text"][0])
+
+                # Start token index of the current span in the text.
+                token_start_index = 0
+                while sequence_ids[token_start_index] != 1:
+                    token_start_index += 1
+
+                # End token index of the current span in the text.
+                token_end_index = len(input_ids) - 1
+                while sequence_ids[token_end_index] != 1:
+                    token_end_index -= 1
+
+                # Detect if the answer is out of the span (in which case this feature is labeled with the CLS index).
+                if not (offsets[token_start_index][0] <= start_char and offsets[token_end_index][1] >= end_char):
+                    tokenized_examples["start_positions"].append(cls_index)
+                    tokenized_examples["end_positions"].append(cls_index)
+                else:
+                    # Otherwise move the token_start_index and token_end_index to the two ends of the answer.
+                    # Note: we could go more granular here, but this is the standard approach.
+                    while token_start_index < len(offsets) and offsets[token_start_index][0] <= start_char:
+                        token_start_index += 1
+                    tokenized_examples["start_positions"].append(token_start_index - 1)
+
+                    while offsets[token_end_index][1] >= end_char:
+                        token_end_index -= 1
+                    tokenized_examples["end_positions"].append(token_end_index + 1)
+
+        return tokenized_examples
+
+    tokenized = dataset.map(
+        prepare_train_features, 
+        batched=True, 
+        remove_columns=dataset.column_names
+    )
+    # tokenized.set_format(type="torch") # This sometimes causes issues with custom collators if not careful
 
     if cache_file:
         pickle.dump(tokenized, open(cache_file, "wb"))
@@ -149,7 +202,6 @@ def compute_metrics(pred, tokenizer):
         metrics["exact_match"] = None
     return metrics
 
-
 def train_model(model, tokenizer, train_dataset, cfg, cache_path=None, force_regen=False):
     model_out = os.path.join("./out", cfg["model"]["out_dir"])
 
@@ -160,18 +212,18 @@ def train_model(model, tokenizer, train_dataset, cfg, cache_path=None, force_reg
         force_regen=force_regen
     )
 
-    args = Seq2SeqTrainingArguments(
+    args = TrainingArguments(
         output_dir=model_out,
         per_device_train_batch_size=cfg["model"]["batch_size"],
         learning_rate=float(cfg["model"]["lr"]),
         num_train_epochs=cfg["model"]["n_epochs"],
-        predict_with_generate=True,
+        # predict_with_generate=True,
         logging_strategy="epoch",
         fp16=False, # Set to False on MPS (Apple silicon)
         save_total_limit=2
     )
 
-    trainer = Seq2SeqTrainer(
+    trainer = CustomQATrainer(
         model=model,
         args=args,
         processing_class=tokenizer,
@@ -193,15 +245,15 @@ def evaluate_model(model, tokenizer, eval_dataset, cfg, cache_path=None, force_r
         force_regen=force_regen
     )
 
-    args = Seq2SeqTrainingArguments(
+    args = TrainingArguments(
         output_dir=model_out,
         per_device_eval_batch_size=cfg["model"]["batch_size"],
-        predict_with_generate=True,
+        # predict_with_generate=True,
         logging_strategy="epoch",
         fp16=False, # Set to False on MPS (Apple silicon)
     )
 
-    trainer = Seq2SeqTrainer(
+    trainer = CustomQATrainer(
         model=model,
         args=args,
         processing_class=tokenizer,
@@ -217,7 +269,7 @@ def get_tokenizer(model_cfg):
     return AutoTokenizer.from_pretrained(model_cfg["pretrained_model"])
 
 def get_model(model_cfg):
-    return AutoModelForSeq2SeqLM.from_pretrained(model_cfg["pretrained_model"])
+    return AutoModelForQuestionAnswering.from_pretrained(model_cfg["pretrained_model"])
 
 
 def run_experiment(cfg, subset=None, force_regen=False):
@@ -227,9 +279,25 @@ def run_experiment(cfg, subset=None, force_regen=False):
 
     ds = supported_datasets[cfg["data"]["dataset"]](subset=subset)
 
-    train_size = int(0.8 * len(ds))
-    train_dataset = ds.select(range(train_size))
-    test_dataset = ds.select(range(train_size, len(ds)))
+    # Check if the dataset is already split (DatasetDict) or needs splitting
+    if isinstance(ds, dict) or "train" in ds.keys(): 
+        # Assuming it's a DatasetDict with train/test or train/validation
+        # We'll use 'train' and 'test' (or 'validation' if test is missing)
+        train_dataset = ds["train"]
+        if "test" in ds:
+            test_dataset = ds["test"]
+        elif "validation" in ds:
+            test_dataset = ds["validation"]
+        else:
+            # Fallback if only train exists, split it
+            split = ds["train"].train_test_split(test_size=0.2, seed=42)
+            train_dataset = split["train"]
+            test_dataset = split["test"]
+    else:
+        # It's a single Dataset, split it manually
+        train_size = int(0.8 * len(ds))
+        train_dataset = ds.select(range(train_size))
+        test_dataset = ds.select(range(train_size, len(ds)))
 
     tokenizer = get_tokenizer(cfg["model"])
     model = get_model(cfg["model"])
