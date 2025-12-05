@@ -6,8 +6,8 @@ Daniel Nicolas Gisolfi <dgisolfi3@gatech.edu>
 """
 
 import os
-import shutil
 import pickle
+import shutil
 
 from peft import LoraConfig, get_peft_model
 from transformers import (
@@ -17,6 +17,8 @@ from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
 )
+
+from lorag.metrics import *
 
 # import torch
 from lorag.utils import *
@@ -95,41 +97,9 @@ def configure_lora(model, lora_cfg):
     model.print_trainable_parameters()
     return model
 
-def compute_metrics(pred, tokenizer):
-    metrics = {}
-
-    preds = pred.predictions
-    # Handle possible logits returned rather than tokens
-    if pred.predictions.ndim == 3:
-        preds = np.argmax(pred.predictions, axis=-1)
-    
-    # Ensure values are ints to avoid conversion
-    pred_ids = preds.astype(int)
-    pred_ids = np.clip(pred_ids, 0, tokenizer.vocab_size - 1)
-
-    labels = pred.label_ids
-    # Ensure all negative pad tokens are set with a valid token ID
-    labels_clean = np.where(labels == -100, tokenizer.pad_token_id, labels)
-    labels_clean = np.clip(labels_clean, 0, tokenizer.vocab_size - 1)
-
-    decoded_preds = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    decoded_labels = tokenizer.batch_decode(labels_clean, skip_special_tokens=True)
-
-    # use bert encoder to compare the true vs predicted sematic similarity
-    F1 = bertscore(decoded_preds, decoded_labels)
-    metrics["bertscore_f1"] = F1
-
-    sem_scores = semscore(decoded_preds, decoded_labels)
-    metrics["semscore_mean"] = float(sum(sem_scores) / len(sem_scores))
-    metrics["semscore_min"] = float(min(sem_scores))
-    metrics["semscore_max"] = float(max(sem_scores))
-
-    metrics["exact_match"] = exact_match(decoded_preds, decoded_labels)
-
-    return metrics
-
 
 def train_model(model, trainer, cfg):
+    print("\n\nTraining Model...")
     model_out = os.path.join("./out", cfg["model"]["out_dir"])
     trainer.train()
     trainer.save_model(model_out)
@@ -137,6 +107,7 @@ def train_model(model, trainer, cfg):
 
 
 def evaluate_model(trainer, cfg):
+    print("\n\nEvaluating Model...")
     metrics = trainer.evaluate()
     print("\nEvaluation Metrics:", metrics)
     return metrics
@@ -229,13 +200,15 @@ def get_trainer(
 
 def run_experiment(cfg, subset=None, force_regen=False):
     output_dir = os.path.join("./out", cfg["model"]["out_dir"])
-    
+
     if force_regen and os.path.exists(output_dir):
         try:
             shutil.rmtree(output_dir)
             print(f"No Cache set, Blowing away old model: {output_dir}")
         except OSError as e:
-            print(f"Error removing old model: {output_dir} : {e.filename} - {e.strerror}.")
+            print(
+                f"Error removing old model: {output_dir} : {e.filename} - {e.strerror}."
+            )
 
     if cfg["data"]["dataset"] not in supported_datasets:
         raise ValueError(f"Dataset not supported: {cfg['data']['dataset']}")

@@ -9,16 +9,13 @@ import glob
 import json
 import os
 
+import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
-import torch.nn.functional as F
 import yaml
-from bert_score import score as bert_score_fn
 from datasets import Dataset, load_dataset
-from sentence_transformers import SentenceTransformer, util
 
-_sem_model = SentenceTransformer("mixedbread-ai/mxbai-embed-large-v1")
+COLOR_MAP = "Dark2"
 
 
 def load_config(config_path="./configs/bert_lora.yaml"):
@@ -216,68 +213,6 @@ def preview_samples(
         print(preview)
 
 
-################# Metrics #################
-
-
-def exact_match(preds, labels):
-    # Number of exact matches / number of examples
-    # TODO: ignore differences in case and punctation of text
-    try:
-        em = sum(p.strip() == l.strip() for p, l in zip(preds, labels)) / len(preds)
-    except Exception as e:
-        print(f"[metric-error] exact match failed: {e}")
-        em = 0
-    return em
-
-
-def semscore(preds, refs):
-    """Compute semantic similarity between predictions and references
-    https://huggingface.co/blog/g-ronimo/semscore
-    https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1
-    """
-    try:
-        emb_pred = _sem_model.encode(
-            preds, convert_to_tensor=True, normalize_embeddings=True
-        )
-        emb_ref = _sem_model.encode(
-            refs, convert_to_tensor=True, normalize_embeddings=True
-        )
-
-        # cosine similarity for each pair
-        scores = util.cos_sim(emb_pred, emb_ref).diagonal()
-        score_list = scores.cpu().tolist()
-    except Exception as e:
-        print(f"[metric-error] SemScore: {e}")
-        # Return a list of zeros matching the number of examples if an error occurs
-        score_list = [0.0] * len(preds)
-    return score_list
-
-
-def bertscore(preds, refs):
-    # Drop empty sequences to prevent model warnings
-    pairs = [(p, r) for p, r in zip(preds, refs) if p.strip() and r.strip()]
-    if not pairs:
-        return 0.0
-
-    preds, refs = zip(*pairs)
-
-    # force max length to avoid truncation warnings from bert
-    preds = [p[:512] for p in preds]
-    refs = [r[:512] for r in refs]
-
-    try:
-        P, R, F1 = bert_score_fn(
-            preds,
-            refs,
-            lang="en",
-            rescale_with_baseline=True,
-        )
-        return F1.mean().item()
-    except Exception as e:
-        print(f"[metric-error] BERTScore: {e}")
-        return 0.0
-
-
 ################# Plots #################
 
 
@@ -330,9 +265,13 @@ def plot_loss(output_dir):
 
     os.makedirs(os.path.join(output_dir, "plots"), exist_ok=True)
 
+    cmap = cm.get_cmap(COLOR_MAP)
+    c_train = cmap(0)
+    c_eval = cmap(2)
+
     plt.figure(figsize=(8, 5))
-    plt.plot(train_steps, train_loss, label="Train Loss", marker="o")
-    plt.plot(eval_steps, eval_loss, label="Eval Loss", marker="x")
+    plt.plot(train_steps, train_loss, label="Train Loss", color=c_train, marker="o")
+    plt.plot(eval_steps, eval_loss, label="Eval Loss", color=c_eval, marker="x")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.title("Train vs Eval Loss")
@@ -352,6 +291,7 @@ def plot_eval_metrics(output_dir):
     metrics_to_plot = {
         "BERTScore F1": "eval_bertscore_f1",
         "Semantic Similarity": "eval_semscore_mean",
+        "NLI Entailment": "eval_entail_mean",
     }
 
     epochs = []
@@ -363,15 +303,20 @@ def plot_eval_metrics(output_dir):
             for readable, key in metrics_to_plot.items():
                 metric_values[readable].append(entry.get(key, None))
 
+    os.makedirs(os.path.join(output_dir, "plots"), exist_ok=True)
+
+    cmap = cm.get_cmap(COLOR_MAP)
+    colors = [cmap(i) for i in range(len(metrics_to_plot))]
+
     plt.figure(figsize=(12, 8))
-    for name, vals in metric_values.items():
-        plt.plot(epochs, vals, marker="o", label=name, linewidth=2)
+    for (name, vals), color in zip(metric_values.items(), colors):
+        plt.plot(epochs, vals, marker="o", label=name, linewidth=2, color=color)
 
     plt.xlabel("Epoch")
     plt.ylabel("Score")
     plt.title("Evaluation Metrics Dashboard")
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(output_dir, "plots/eval_dashboard.png"))
+    plt.savefig(os.path.join(output_dir, "plots/eval_metrics.png"))
     plt.close()
-    print("Saved:", os.path.join(output_dir, "plots/eval_dashboard.png"))
+    print("Saved:", os.path.join(output_dir, "plots/eval_metrics.png"))

@@ -92,3 +92,8 @@ python3 -m lorag --config .\configs\bioT5_qlora.yaml --no-cache
 ### RAG (Retrieval-Augmented Generation)
 - Build a vector index from FAISS? 
 - We can look into this later as the project is meant to revolve around the training.
+
+
+## Metrics
+
+- https://arxiv.org/pdf/2401.17072

@@ -4,9 +4,12 @@ Author(s)
 ---------
 Daniel Nicolas Gisolfi <dgisolfi3@gatech.edu>
 """
-import os
+
 import argparse
+import os
+
 from lorag.train import *
+
 
 def main():
     parser = argparse.ArgumentParser(description="LoRAG Experiment")
@@ -28,6 +31,7 @@ def main():
     os.makedirs("./data", exist_ok=True)
 
     run_experiment(config, subset=config["data"]["subset"], force_regen=args.no_cache)
+
 
 if __name__ == "__main__":
     main()
