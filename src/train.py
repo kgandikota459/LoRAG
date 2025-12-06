@@ -176,7 +176,7 @@ def train_model(model, tokenizer, train_dataset, cfg, cache_path=None, force_reg
         num_train_epochs=cfg["model"]["n_epochs"],
         predict_with_generate=True,
         logging_strategy="epoch",
-        fp16=True, # Set to False on MPS (Apple silicon)
+        fp16=False, # Set to False on MPS (Apple silicon)
         bf16=qauntized,
         gradient_checkpointing=qauntized,
         save_total_limit=2
@@ -185,7 +185,7 @@ def train_model(model, tokenizer, train_dataset, cfg, cache_path=None, force_reg
     trainer = Seq2SeqTrainer(
         model=model,
         args=args,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         train_dataset=tokenized_train,
         compute_metrics=lambda p: compute_metrics(p, tokenizer)
     )
@@ -210,14 +210,14 @@ def evaluate_model(model, tokenizer, eval_dataset, cfg, cache_path=None, force_r
         per_device_eval_batch_size=cfg["model"]["batch_size"],
         predict_with_generate=True,
         logging_strategy="epoch",
-        fp16=True, # Set to False on MPS (Apple silicon)
+        fp16=False, # Set to False on MPS (Apple silicon)
         bf16=qauntized,
     )
 
     trainer = Seq2SeqTrainer(
         model=model,
         args=args,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         eval_dataset=tokenized_eval,
         compute_metrics=lambda p: compute_metrics(p, tokenizer)
     )
