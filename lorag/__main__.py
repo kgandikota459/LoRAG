@@ -8,7 +8,7 @@ Daniel Nicolas Gisolfi <dgisolfi3@gatech.edu>
 import argparse
 import os
 
-from lorag.train import *
+from lorag.experiment import *
 
 
 def main():
@@ -24,13 +24,23 @@ def main():
         action="store_true",
         help="Force regenerate tokenized dataset and ignore cached version",
     )
+    parser.add_argument(
+        "--grid-search",
+        action="store_true",
+        help="Drives a gridsearch rather than single model run",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
     os.makedirs("./out", exist_ok=True)
     os.makedirs("./data", exist_ok=True)
 
-    run_experiment(config, subset=config["data"]["subset"], force_regen=args.no_cache)
+    run(
+        config,
+        subset=config["data"]["subset"],
+        force_regen=args.no_cache,
+        grid=args.grid_search,
+    )
 
 
 if __name__ == "__main__":

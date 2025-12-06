@@ -9,7 +9,7 @@ model:
 lora:
   enabled: False # Gather Baseline for T5 first
 data:
-  subset: 500 # None for all data
+  subset: 100 # None for all data
   dataset: derm_qa
   # dataset: medXpert
   # dataset: no_robots

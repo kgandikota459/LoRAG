@@ -4,10 +4,20 @@ PyYAML
 datasets
 nltk
 torch
-matplotlib
-sentence-transformers
+pandas
+
 # Metrics
 bert_score
-# evaluate
-# rouge_score
-# sacrebleu
+sentence-transformers
+
+# Gridsearch
+optuna
+
+# plotting 
+matplotlib
+plotly
+kaleido
+
+# Development
+black
+isort

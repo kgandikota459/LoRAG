@@ -9,13 +9,9 @@ import glob
 import json
 import os
 
-import matplotlib.cm as cm
-import matplotlib.pyplot as plt
 import torch
 import yaml
 from datasets import Dataset, load_dataset
-
-COLOR_MAP = "Dark2"
 
 
 def load_config(config_path="./configs/bert_lora.yaml"):
@@ -213,9 +209,6 @@ def preview_samples(
         print(preview)
 
 
-################# Plots #################
-
-
 def load_trainer_logs(output_dir):
     """Get the latest training logs from out dir"""
     state_path = os.path.join(output_dir, "trainer_state.json")
@@ -242,81 +235,3 @@ def load_trainer_logs(output_dir):
         print(f"log_history is empty: {state_path}")
 
     return log_history
-
-
-def plot_loss(output_dir):
-    logs = load_trainer_logs(output_dir)
-    if logs is None:
-        return
-
-    train_steps = []
-    train_loss = []
-    eval_steps = []
-    eval_loss = []
-
-    for entry in logs:
-        if "loss" in entry and "epoch" in entry:
-            train_steps.append(entry["epoch"])
-            train_loss.append(entry["loss"])
-
-        if "eval_loss" in entry:
-            eval_steps.append(entry["epoch"])
-            eval_loss.append(entry["eval_loss"])
-
-    os.makedirs(os.path.join(output_dir, "plots"), exist_ok=True)
-
-    cmap = cm.get_cmap(COLOR_MAP)
-    c_train = cmap(0)
-    c_eval = cmap(2)
-
-    plt.figure(figsize=(8, 5))
-    plt.plot(train_steps, train_loss, label="Train Loss", color=c_train, marker="o")
-    plt.plot(eval_steps, eval_loss, label="Eval Loss", color=c_eval, marker="x")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Train vs Eval Loss")
-    plt.legend()
-    plt.grid()
-    plt.savefig(os.path.join(output_dir, "plots/loss_curve.png"))
-    plt.close()
-    print("Saved:", os.path.join(output_dir, "plots/loss_curve.png"))
-
-
-def plot_eval_metrics(output_dir):
-    logs = load_trainer_logs(output_dir)
-
-    if logs is None:
-        return
-
-    metrics_to_plot = {
-        "BERTScore F1": "eval_bertscore_f1",
-        "Semantic Similarity": "eval_semscore_mean",
-        "NLI Entailment": "eval_entail_mean",
-    }
-
-    epochs = []
-    metric_values = {name: [] for name in metrics_to_plot}
-
-    for entry in logs:
-        if "eval_loss" in entry:
-            epochs.append(entry["epoch"])
-            for readable, key in metrics_to_plot.items():
-                metric_values[readable].append(entry.get(key, None))
-
-    os.makedirs(os.path.join(output_dir, "plots"), exist_ok=True)
-
-    cmap = cm.get_cmap(COLOR_MAP)
-    colors = [cmap(i) for i in range(len(metrics_to_plot))]
-
-    plt.figure(figsize=(12, 8))
-    for (name, vals), color in zip(metric_values.items(), colors):
-        plt.plot(epochs, vals, marker="o", label=name, linewidth=2, color=color)
-
-    plt.xlabel("Epoch")
-    plt.ylabel("Score")
-    plt.title("Evaluation Metrics Dashboard")
-    plt.legend()
-    plt.grid()
-    plt.savefig(os.path.join(output_dir, "plots/eval_metrics.png"))
-    plt.close()
-    print("Saved:", os.path.join(output_dir, "plots/eval_metrics.png"))

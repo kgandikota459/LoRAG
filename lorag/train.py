@@ -11,16 +11,12 @@ import shutil
 
 from peft import LoraConfig, get_peft_model
 from transformers import (
-    AutoModelForSeq2SeqLM,
-    AutoTokenizer,
-    BitsAndBytesConfig,
-    Seq2SeqTrainer,
-    Seq2SeqTrainingArguments,
+    AutoModelForSeq2SeqLM, AutoTokenizer,
+    BitsAndBytesConfig, Seq2SeqTrainer,
+    Seq2SeqTrainingArguments
 )
 
 from lorag.metrics import *
-
-# import torch
 from lorag.utils import *
 
 supported_datasets = {
@@ -196,49 +192,3 @@ def get_trainer(
     )
 
     return trainer
-
-
-def run_experiment(cfg, subset=None, force_regen=False):
-    output_dir = os.path.join("./out", cfg["model"]["out_dir"])
-
-    if force_regen and os.path.exists(output_dir):
-        try:
-            shutil.rmtree(output_dir)
-            print(f"No Cache set, Blowing away old model: {output_dir}")
-        except OSError as e:
-            print(
-                f"Error removing old model: {output_dir} : {e.filename} - {e.strerror}."
-            )
-
-    if cfg["data"]["dataset"] not in supported_datasets:
-        raise ValueError(f"Dataset not supported: {cfg['data']['dataset']}")
-
-    ds = supported_datasets[cfg["data"]["dataset"]](subset=subset)
-
-    train_size = int(0.8 * len(ds))
-    train_dataset = ds.select(range(train_size))
-    test_dataset = ds.select(range(train_size, len(ds)))
-
-    tokenizer = get_tokenizer(cfg["model"])
-    model = get_model(cfg["model"])
-
-    model = configure_lora(model, cfg.get("lora", {}))
-
-    cache_path = os.path.join("./data", f"{cfg['data']['dataset']}")
-    trainer = get_trainer(
-        model,
-        tokenizer,
-        train_dataset,
-        test_dataset,
-        cfg,
-        cache_path=cache_path,
-        force_regen=force_regen,
-    )
-
-    model = train_model(model, trainer, cfg)
-    evaluate_model(trainer, cfg)
-
-    plot_loss(output_dir)
-    plot_eval_metrics(output_dir)
-
-    preview_samples(model, tokenizer, test_dataset, num_samples=5, out=output_dir)

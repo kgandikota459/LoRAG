@@ -50,6 +50,20 @@ python3 -m lorag --config .\configs\bioT5_lora.yaml --no-cache
 python3 -m lorag --config .\configs\bioT5_qlora.yaml --no-cache
 ```
 
+#### Grid Search (Optuna Study)
+
+```
+usage: __main__.py [-h] [--config CONFIG] [--no-cache] [--grid-search]
+
+LoRAG Experiment
+
+options:
+  -h, --help       show this help message and exit
+  --config CONFIG  Path to YAML configuration file
+  --no-cache       Force regenerate tokenized dataset and ignore cached version
+  --grid-search    Drives a gridsearch rather than single model run
+```
+
 ## Plan / Dev Items for LoRA + RAG + Quantization ML pipeline
 
 ### Create a data loader and preprocessor

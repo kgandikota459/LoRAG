@@ -186,8 +186,8 @@ def compute_metrics(pred, tokenizer):
     decoded_labels = tokenizer.batch_decode(labels_clean, skip_special_tokens=True)
 
     # Replace empty string with empty
-    decoded_preds = [p if p.strip() else "[EMPTY]" for p in decoded_preds]
-    decoded_labels = [r if r.strip() else "[EMPTY]" for r in decoded_labels]
+    # decoded_preds = [p if p.strip() else "[EMPTY]" for p in decoded_preds]
+    # decoded_labels = [r if r.strip() else "[EMPTY]" for r in decoded_labels]
 
     # use bert encoder to compare the true vs predicted sematic similarity
     F1 = bert_score_f1(decoded_preds, decoded_labels)
