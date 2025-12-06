@@ -50,28 +50,39 @@ def single_experiment(cfg, train_dataset, test_dataset, force_regen):
 
 
 def grid_search(cfg, train_dataset, test_dataset, force_regen):
-    out_dir = "./out/grid"
-    if os.path.exists(out_dir):
-        raise f"Warning :: path already exists: {out_dir} | Move dir or use --no-cache"
     print("\n\nRunning Grid Search...")
-    os.makedirs(out_dir)
-    os.makedirs(f"{out_dir}/plots")
+    search_scopes =  [
+        "base", 
+        "lora", 
+        # "qlora" # Requires cuda env
+    ]
 
-    study = run_study(
-        train_dataset,
-        test_dataset,
-        cfg,
-        n_trials=5,
-        output_dir=out_dir,
-        force_regen=force_regen,
-    )
+    for scope in search_scopes:
+        print(f"\n\nRunning {scope} study...")
+        out_dir = f"./out/grid/{scope}"
+        if os.path.exists(out_dir):
+            raise f"Warning :: path already exists: {out_dir} | Move dir or use --no-cache"
+   
+        os.makedirs(out_dir)
+        os.makedirs(f"{out_dir}/plots")
 
-    metrics_to_plot = ["eval_loss", "eval_bertscore_f1", "eval_semscore_mean"]
-    params_to_group_by = ["lr", "batch_size", "max_length"]
+        study = run_study(
+            train_dataset,
+            test_dataset,
+            cfg,
+            n_trials=2,
+            output_dir=out_dir,
+            force_regen=force_regen,
+            scope=scope
+        )
 
-    for metric in metrics_to_plot:
-        for param in params_to_group_by:
-            plot_metric_epoch_curve(study, out_dir, metric=metric, param=param)
+        metrics_to_plot = ["eval_loss", "eval_bertscore_f1", "eval_semscore_mean", "eval_entail_mean"]
+        # TODO: Add check for lora to plot lora prams too
+        params_to_group_by = ["lr", "batch_size", "max_length"]
+
+        for metric in metrics_to_plot:
+            for param in params_to_group_by:
+                plot_metric_epoch_curve(study, out_dir, metric=metric, param=param)
 
 
 def ds_load(cfg, subset=None):

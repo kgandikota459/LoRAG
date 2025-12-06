@@ -51,7 +51,7 @@ def plot_loss(output_dir):
     plt.title("Train vs Eval Loss")
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(output_dir, "plots/loss_curve.png"))
+    plt.savefig(os.path.join(output_dir, "plots/loss_curve.png"), dpi=300)
     plt.close()
     print("Saved:", os.path.join(output_dir, "plots/loss_curve.png"))
 
@@ -91,7 +91,7 @@ def plot_eval_metrics(output_dir):
     plt.title("Evaluation Metrics Dashboard")
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(output_dir, "plots/eval_metrics.png"))
+    plt.savefig(os.path.join(output_dir, "plots/eval_metrics.png"), dpi=300)
     plt.close()
     print("Saved:", os.path.join(output_dir, "plots/eval_metrics.png"))
 
@@ -131,7 +131,7 @@ def plot_metric_epoch_curve(study, output_dir, metric="eval_loss", param="lr"):
 
     plt.title(f"{metric} vs Epoch\ncolored by {param}")
     plt.ylabel(metric)
-    plt.savefig(f"{output_dir}/{metric}_vs_epoch_colored_by_{param}.png")
+    plt.savefig(f"{output_dir}/{metric}_vs_epoch_colored_by_{param}.png", dpi=300)
     plt.close()
 
     print(f"Saved: {output_dir}/{metric}_vs_epoch_colored_by_{param}.png")

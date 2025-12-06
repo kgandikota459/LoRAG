@@ -38,16 +38,10 @@ class MetricLoggerCallback(transformers.TrainerCallback):
 
 
 def objective(
-    trial, train_dataset, eval_dataset, base_cfg, cache_path=None, force_regen=False
+    trial, train_dataset, eval_dataset, 
+    base_cfg, cache_path=None, force_regen=False,
+    mode="base"
 ):
-    mode = trial.suggest_categorical(
-        "train_mode",
-        [
-            "base",
-            "lora",
-            # "qlora"
-        ],
-    )
 
     lr = trial.suggest_float("lr", 1e-7, 1e-3, log=True)
     batch_size = trial.suggest_categorical("batch_size", [2, 4, 8])
@@ -60,7 +54,7 @@ def objective(
 
     cfg = copy.deepcopy(base_cfg)
     cfg["model"]["out_dir"] = (
-        "grid/" + base_cfg["model"]["out_dir"] + f"_{lr}_{batch_size}_{max_length}"
+        f"grid/{mode}/" + base_cfg["model"]["out_dir"] + f"_{lr}_{batch_size}_{max_length}"
     )
     cfg["model"]["lr"] = lr
     cfg["model"]["batch_size"] = batch_size
@@ -84,6 +78,7 @@ def objective(
     trainer = get_trainer(
         model, tokenizer, train_dataset, eval_dataset, cfg, cache_path, force_regen
     )
+    # Add callback class to record metrics throughout
     trainer.add_callback(metrics_logger)
 
     trainer.train()
@@ -104,6 +99,7 @@ def run_study(
     n_trials=5,
     output_dir="./out/grid",
     force_regen=False,
+    scope="base"
 ):
     plots_dir = os.path.join(output_dir, "plots")
     os.makedirs(output_dir, exist_ok=True)
@@ -117,6 +113,7 @@ def run_study(
             cfg,
             cache_path=output_dir,
             force_regen=force_regen,
+            mode=scope
         ),
         n_trials=n_trials,
     )

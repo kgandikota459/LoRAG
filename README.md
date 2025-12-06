@@ -20,7 +20,7 @@ A config file can be specified via the cli, the default is under the configs dir
 
 ```
 > python3 -m lorag --help                                 
-usage: __main__.py [-h] [--config CONFIG] [--no-cache]
+usage: __main__.py [-h] [--config CONFIG] [--no-cache] [--grid-search]
 
 LoRAG Experiment
 
@@ -28,6 +28,7 @@ options:
   -h, --help       show this help message and exit
   --config CONFIG  Path to YAML configuration file
   --no-cache       Force regenerate tokenized dataset and ignore cached version
+  --grid-search    Drives a gridsearch rather than single model run
 ```
 
 ### Experiments
@@ -53,15 +54,7 @@ python3 -m lorag --config .\configs\bioT5_qlora.yaml --no-cache
 #### Grid Search (Optuna Study)
 
 ```
-usage: __main__.py [-h] [--config CONFIG] [--no-cache] [--grid-search]
-
-LoRAG Experiment
-
-options:
-  -h, --help       show this help message and exit
-  --config CONFIG  Path to YAML configuration file
-  --no-cache       Force regenerate tokenized dataset and ignore cached version
-  --grid-search    Drives a gridsearch rather than single model run
+python3 -m lorag --no-cache --grid-search
 ```
 
 ## Plan / Dev Items for LoRA + RAG + Quantization ML pipeline
