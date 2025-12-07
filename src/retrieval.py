@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 from typing import Optional, List, Tuple
 import datasets
 from utils import *
@@ -19,40 +20,62 @@ def get_data_RAG(cfg):
         "display.max_colwidth", None
     )  # This will be helpful when visualizing retriever outputs
 
-    supported_datasets = {
-    "derm_qa": load_derm_qa_dataset,
-    "medXpert": load_medXpert_dataset,
-    "no_robots": load_no_robots
-}
-    ds = supported_datasets[cfg["data"]["dataset"]]
-    ds = load_dataset("Thesiss/derm_QA", split = 'train')
-    print(ds)
+    supported_datasets = {"derm_qa": "Thesiss/derm_QA",
+                          "derm_firecrawl": "kingabzpro/dermatology-qa-firecrawl-dataset",}
 
-    RAW_KNOWLEDGE_BASE = [
-        LangchainDocument(page_content=doc["prompt"], metadata={"response": doc["response"]}) for doc in tqdm(ds)
-    ]
+    dataset_name = cfg["data"]["dataset"]
+    index_path = f"./dataRAG/{dataset_name}_faiss_index"
+
+    # Initialize embedding model once for both loading and creating
+    embedding_model = HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL_NAME,
+        multi_process=True,
+        model_kwargs={"device": "mps"},
+        encode_kwargs={"normalize_embeddings": True},
+    )
+
+    # Check for cached index
+    if os.path.exists(index_path):
+        print(f"Loading existing FAISS index from {index_path}...")
+        try:
+            vectorDB = FAISS.load_local(index_path, embedding_model, allow_dangerous_deserialization=True)
+            return vectorDB
+        except Exception as e:
+            print(f"Failed to load index: {e}. Rebuilding...")
+
+    # Rebuild index if not found
+    datapath = supported_datasets[dataset_name]
+    ds = load_dataset(datapath, split = 'train')
+
+    RAW_KNOWLEDGE_BASE = [LangchainDocument(page_content=doc["question"], metadata={"response": doc["answer"]}) for doc in tqdm(ds)]
 
     docs_processed = splitter(256, RAW_KNOWLEDGE_BASE, EMBEDDING_MODEL_NAME)
-    vectorDB = embed_knowledge(docs_processed)
+    
+    print("Building FAISS index...")
+    vectorDB = FAISS.from_documents(
+        docs_processed, embedding_model, distance_strategy=DistanceStrategy.COSINE
+    )
+    
+    print(f"Saving FAISS index to {index_path}...")
+    vectorDB.save_local(index_path)
     return vectorDB
 
 
 def splitter(chunk_size: int, 
              knowledge_base: List[LangchainDocument], 
              tokenizer_name: Optional[str] = EMBEDDING_MODEL_NAME,) -> List[LangchainDocument]:
-    """
-    Split documents into chunks of maximum size `chunk_size` tokens and return a list of documents.
-    """
+    
+    """Split documents into chunks of maximum size `chunk_size` tokens and return a list of documents."""
     MARKDOWN_SEPARATORS = [
-    "\n#{1,6} ",
-    "```\n",
-    "\n\\*\\*\\*+\n",
-    "\n---+\n",
-    "\n___+\n",
-    "\n\n",
-    "\n",
-    " ",
-    "",]
+        "\n#{1,6} ",
+        "```\n",
+        "\n\\*\\*\\*+\n",
+        "\n---+\n",
+        "\n___+\n",
+        "\n\n",
+        "\n",
+        " ",
+        "",]
 
     text_splitter = RecursiveCharacterTextSplitter.from_huggingface_tokenizer(
         AutoTokenizer.from_pretrained(tokenizer_name),
@@ -100,6 +123,4 @@ def search_query_in_DB(userQuery, vectorDB):
     print("==================================Metadata==================================")
     print(retrieved_docs[0].metadata)
     return retrieved_docs
-
-
-
+    
