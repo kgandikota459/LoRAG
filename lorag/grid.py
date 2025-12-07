@@ -88,8 +88,8 @@ def objective(
     trial.set_user_attr("train_logs", metrics_logger.train_logs)
     trial.set_user_attr("eval_logs", metrics_logger.eval_logs)
 
-    # reurn max value if theres an err caluclating eval loss
-    return metrics.get("eval_loss", 999.0)
+    # reurn max or min value if theres an err caluclating eval loss
+    return metrics.get("eval_loss", 999.0), metrics.get("eval_entail_mean", 0.0)
 
 
 def run_study(
@@ -104,7 +104,18 @@ def run_study(
     plots_dir = os.path.join(output_dir, "plots")
     os.makedirs(output_dir, exist_ok=True)
 
-    study = optuna.create_study(direction="minimize")
+    # Single Objective Optimization
+    # study = optuna.create_study(direction="minimize")
+
+    # Multi Objective Optimization
+    study = optuna.create_study(
+        # Minimize eval loss, maximize entailment
+        directions=["minimize", "maximize"], 
+        pruner=optuna.pruners.HyperbandPruner(
+            # TODO: Play with these values as they are default
+            min_resource=1, max_resource=100, reduction_factor=3
+        )
+    )
     study.optimize(
         lambda trial: objective(
             trial,
@@ -118,18 +129,25 @@ def run_study(
         n_trials=n_trials,
     )
 
-    print("Best Trial Params:")
-    print(study.best_trial.params)
+    # print("Best Trial Params:")
+    # print(study.best_trial.params)
 
-    # Optuna built in plots
-    for name, func in {
-        "opt_history": visualization.plot_optimization_history,
-        "param_importance": visualization.plot_param_importances,
-        "parallel_coord": visualization.plot_parallel_coordinate,
-        "contour": visualization.plot_contour,
-        "slice": visualization.plot_slice,
-        "edf": visualization.plot_edf,
-    }.items():
-        func(study).write_image(f"{plots_dir}/{name}.png")
+    pareto_front_trials = study.best_trials
+
+    print(f"number of trials on the Pareto front: {len(pareto_front_trials)}")
+    for i, trial in enumerate(pareto_front_trials):
+        print(f"trial {i}: Value={trial.values}, Params={trial.params}")
+
+    def optuna_plots(study, target):
+        # target=lambda t: t.values[0], target_name="First Objective"
+        for name, func in {
+            "opt_history": visualization.plot_optimization_history,
+            "param_importance": visualization.plot_param_importances,
+            "parallel_coord": visualization.plot_parallel_coordinate,
+            "contour": visualization.plot_contour,
+            "slice": visualization.plot_slice,
+            "edf": visualization.plot_edf,
+        }.items():
+            func(study).write_image(f"{plots_dir}/{name}.png")
 
     return study

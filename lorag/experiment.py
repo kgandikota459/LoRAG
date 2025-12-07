@@ -70,7 +70,7 @@ def grid_search(cfg, train_dataset, test_dataset, force_regen):
             train_dataset,
             test_dataset,
             cfg,
-            n_trials=2,
+            n_trials=5,
             output_dir=out_dir,
             force_regen=force_regen,
             scope=scope

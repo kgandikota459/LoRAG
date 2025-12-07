@@ -195,14 +195,14 @@ def compute_metrics(pred, tokenizer):
 
     sem_scores = sem_score(decoded_preds, decoded_labels)
     metrics["semscore_mean"] = float(sum(sem_scores) / len(sem_scores))
-    metrics["semscore_min"] = float(min(sem_scores))
-    metrics["semscore_max"] = float(max(sem_scores))
+    # metrics["semscore_min"] = float(min(sem_scores))
+    # metrics["semscore_max"] = float(max(sem_scores))
 
     metrics["exact_match"] = exact_match(decoded_preds, decoded_labels)
 
     entail_scores = nli_entailment_score(decoded_preds, decoded_labels)
     metrics["entail_mean"] = float(sum(entail_scores) / len(entail_scores))
-    metrics["entail_min"] = float(min(entail_scores))
-    metrics["entail_max"] = float(max(entail_scores))
+    # metrics["entail_min"] = float(min(entail_scores))
+    # metrics["entail_max"] = float(max(entail_scores))
 
     return metrics
