@@ -1,0 +1,24 @@
+model:
+  pretrained_model: QizhiPei/biot5-base
+  out_dir: biot5_lora
+  max_len: 256
+  batch_size: 4
+  lr: 2e-4
+  n_epochs: 2 # Lowered for testing RAG, should be 5
+  # Set to True on CUDA
+  quantization: False
+  use_cpu: True
+lora:
+  enabled: True
+  r: 32
+  alpha: 32
+  dropout: 0.05
+data:
+  # Lowered for testing RAG, should be 300-500
+  subset: 20 # None for all data
+  dataset: derm_qa
+  # dataset: medXpert
+  # dataset: no_robots
+rag:
+  enabled: True
+  dataset: derm_firecrawl

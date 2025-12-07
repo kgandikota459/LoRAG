@@ -10,6 +10,7 @@ import shutil
 
 from lorag.grid import *
 from lorag.plots import *
+from lorag.rag import *
 from lorag.train import *
 from lorag.utils import *
 
@@ -46,14 +47,18 @@ def single_experiment(cfg, train_dataset, test_dataset, force_regen):
 
     preview_samples(model, tokenizer, test_dataset, num_samples=5, out=output_dir)
 
+    if cfg.get("rag", None):
+        if cfg["rag"].get("enabled", False):
+            rag_experiment(cfg, model, tokenizer, train_dataset, test_dataset)
+
     return metrics
 
 
 def grid_search(cfg, train_dataset, test_dataset, force_regen):
     print("\n\nRunning Grid Search...")
-    search_scopes =  [
-        "base", 
-        "lora", 
+    search_scopes = [
+        "base",
+        "lora",
         # "qlora" # Requires cuda env
     ]
 
@@ -62,7 +67,7 @@ def grid_search(cfg, train_dataset, test_dataset, force_regen):
         out_dir = f"./out/grid/{scope}"
         if os.path.exists(out_dir):
             raise f"Warning :: path already exists: {out_dir} | Move dir or use --no-cache"
-   
+
         os.makedirs(out_dir)
         os.makedirs(f"{out_dir}/plots")
 
@@ -73,10 +78,15 @@ def grid_search(cfg, train_dataset, test_dataset, force_regen):
             n_trials=5,
             output_dir=out_dir,
             force_regen=force_regen,
-            scope=scope
+            scope=scope,
         )
 
-        metrics_to_plot = ["eval_loss", "eval_bertscore_f1", "eval_semscore_mean", "eval_entail_mean"]
+        metrics_to_plot = [
+            "eval_loss",
+            "eval_bertscore_f1",
+            "eval_semscore_mean",
+            "eval_entail_mean",
+        ]
         # TODO: Add check for lora to plot lora prams too
         params_to_group_by = ["lr", "batch_size", "max_length"]
 
