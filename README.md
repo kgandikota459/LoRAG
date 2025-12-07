@@ -4,7 +4,7 @@ CS7643 Final Project
 ## Author(s)
 
 - Daniel Nicolas Gisolfi <dgisolfi3@gatech.edu>
-- Kaushal Gandikota <kgandikota@gatech.edu>
+- Kaushal Gandikota <kgandikota6@gatech.edu>
 
 ## Usage
 

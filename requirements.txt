@@ -19,6 +19,14 @@ plotly
 kaleido
 seaborn
 
+# RAG
+langchain_core
+langchain_text_splitters
+langchain_community
+langchain_huggingface
+faiss-cpu
+# faiss-gpu # For CUDA
+
 # Development
 black
 isort
