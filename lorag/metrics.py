@@ -9,6 +9,7 @@ from typing import List
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from bert_score import score as bert_score_fn
 from sentence_transformers import SentenceTransformer, util
@@ -206,3 +207,77 @@ def compute_metrics(pred, tokenizer):
     # metrics["entail_max"] = float(max(entail_scores))
 
     return metrics
+
+def per_module_calculator(model):
+    layer_info = []
+
+    for name, module in model.named_modules():
+        if len(list(module.children())) < 1:
+            module_params = sum(param.numel() for param in module.parameters())
+            layer_info.append({
+                'Layer Name': name,
+                'Module Params': module_params
+            })
+    
+    return layer_info
+
+# markaicode.com/get-model-information-size-parameters-architecture/
+
+def general_summary_calculator(model, input_shape=None):
+    trainable_params_memory = 0
+    frozen_params_memory = 0
+    
+    for param in model.parameters():
+        param_memory = param.numel() * param.element_size()
+        if param.requires_grad:
+            trainable_params_memory += param_memory
+        else:
+            frozen_params_memory += param_memory
+            
+    trainable_params_memory_mb = trainable_params_memory / (1024**2)
+    frozen_params_memory_mb = frozen_params_memory / (1024**2)
+    total_params_memory_mb = trainable_params_memory_mb + frozen_params_memory_mb
+
+    device = next(model.parameters()).device
+    
+    if input_shape and len(input_shape) == 2:
+        batch_size, seq_len = input_shape
+        activation_memory_input = {
+            "input_ids": torch.randint(0, 1000, (batch_size, seq_len), device=device),
+            "decoder_input_ids": torch.randint(0, 1000, (batch_size, seq_len), device=device)
+        }
+    else:
+        activation_memory_input = torch.randn(input_shape, device=device)
+        
+    activation_sizes = []
+
+    def hooks(m, i, o):
+        if isinstance(o, torch.Tensor):
+            activation_sizes.append(o.numel() * o.element_size() / (1024**2))
+
+    hook_list = []
+
+    for module in model.modules():
+        if len(list(module.children())) < 1:
+            hook_list.append(module.register_forward_hook(hooks))
+    
+    with torch.no_grad():
+        if isinstance(activation_memory_input, dict):
+            _ = model(**activation_memory_input)
+        else:
+            _ = model(activation_memory_input)
+    
+    for hook in hook_list:
+        hook.remove()
+
+    activation_memory_mb = sum(activation_sizes)
+    
+    summary_dict = {
+        'Trainable Parameter Memory (MB): ': trainable_params_memory_mb,
+        'Frozen Parameter Memory (MB): ': frozen_params_memory_mb,
+        'Total Parameter Memory (MB): ': total_params_memory_mb,
+        'Activation Memory (MB): ': activation_memory_mb,
+        'Total Memory (MB): ': total_params_memory_mb + activation_memory_mb
+    }
+
+    return summary_dict

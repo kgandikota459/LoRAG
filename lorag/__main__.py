@@ -9,6 +9,7 @@ import argparse
 import os
 
 from lorag.experiment import *
+from lorag.size_params_calculator import *
 
 
 def main():

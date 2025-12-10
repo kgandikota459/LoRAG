@@ -71,7 +71,8 @@ def get_data_RAG(cfg):
 
     RAW_KNOWLEDGE_BASE = [
         LangchainDocument(
-            page_content=doc["question"], metadata={"response": doc["answer"]}
+            page_content=f"Question: {doc['Question']}\nAnswer: {doc['Answer']}",
+            metadata={"source": "derm_firecrawl"}
         )
         for doc in tqdm(ds)
     ]
@@ -208,48 +209,49 @@ def rag_experiment(cfg, model, tokenizer, train_dataset, test_dataset):
     READER_LLM = pipeline(
         model=model,
         tokenizer=tokenizer,
-        task="text-generation",
+        task="text2text-generation",
         do_sample=True,
-        temperature=0.2,
-        repetition_penalty=1.1,
-        return_full_text=False,
+        temperature=0.1,
+        repetition_penalty=1.2,
         max_new_tokens=300,
     )
 
-    prompt_in_chat_format = [
-        {
-            "role": "system",
-            "content": """Using the information contained in the context, give a comprehensive answer to the question.
-                          Respond only to the question asked, and be concise.
-                          Cite source document numbers. If not in context, answer "Unknown".""",
-        },
-        {
-            "role": "user",
-            "content": """Context: {context}
-                          ---
-                          Question: {question}""",
-        },
-    ]
+    # prompt_in_chat_format = [
+    #     {
+    #         "role": "system",
+    #         "content": """Using the information contained in the context, give a comprehensive answer to the question.
+    #                       Respond only to the question asked, and be concise.
+    #                       Cite source document numbers. If not in context, answer "Unknown".""",
+    #     },
+    #     {
+    #         "role": "user",
+    #         "content": """Context: {context}
+    #                       ---
+    #                       Question: {question}""",
+    #     },
+    # ]
 
-    # RAG_PROMPT_TEMPLATE = tokenizer.apply_chat_template(
-    #     prompt_in_chat_format, tokenize=False, add_generation_prompt=True
-    # )
+    # # RAG_PROMPT_TEMPLATE = tokenizer.apply_chat_template(
+    # #     prompt_in_chat_format, tokenize=False, add_generation_prompt=True
+    # # )
     
-    # The trainer tokenizer does not have tokenizer.chat_template set
-    # Manuel prompt template for working around 
-    # this issue without massive changes to the tokenizer
-    system_prompt = prompt_in_chat_format[0]["content"]
-    user_prompt_template = prompt_in_chat_format[1]["content"]
+    # # The trainer tokenizer does not have tokenizer.chat_template set
+    # # Manuel prompt template for working around 
+    # # this issue without massive changes to the tokenizer
+    # system_prompt = prompt_in_chat_format[0]["content"]
+    # user_prompt_template = prompt_in_chat_format[1]["content"]
+
     RAG_PROMPT_TEMPLATE = (
-        f"<|system|>\n{system_prompt}\n\n"
-        f"<|user|>\n{user_prompt_template}\n\n"
-        f"<|assistant|>\n"
+        "### Question:\n"
+        "Context: {context}\n\n"
+        "Given the above context, {question}\n\n"
+        "### Answer:\n"
     )
 
     # TODO: Use the train/test dataset to pull more than one question and its ground truth
     # We can just loop over the number of samples and then compare the results
     # to the ones without rag in preview_samples
-    example_q = "Can you tell me about the treatment modalities for melanoma?"
+    example_q = "What are the treatment options for Melanoma?"
 
     print("\n=== Running RAG Example Inference ===")
     answer, docs = answer_with_rag(
@@ -258,9 +260,10 @@ def rag_experiment(cfg, model, tokenizer, train_dataset, test_dataset):
         vectorDB,
         RAG_PROMPT_TEMPLATE,
         num_retrieved_docs=20,
-        num_docs_final=5,
+        num_docs_final=6,
     )
 
+    print(docs)
     print("\n\n----- RAG Answer -----")
     print(answer)
 

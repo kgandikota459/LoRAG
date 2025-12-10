@@ -13,6 +13,7 @@ from lorag.plots import *
 from lorag.rag import *
 from lorag.train import *
 from lorag.utils import *
+from lorag.metrics import general_summary_calculator
 
 supported_datasets = {
     "derm_qa": load_derm_qa_dataset,
@@ -41,6 +42,10 @@ def single_experiment(cfg, train_dataset, test_dataset, force_regen):
 
     model = train_model(model, trainer, cfg)
     metrics = evaluate_model(trainer, cfg)
+    
+    # general_summary_calculator prints out the parameter memory, activation memory, and the combined total of both in megabytes
+    # second param is batch size, max len
+    print(general_summary_calculator(model, (2, 256)))
 
     plot_loss(output_dir)
     plot_eval_metrics(output_dir)
